@@ -95,6 +95,13 @@ def regenerate_device_token(user=Depends(current_user)):
 
 def check_device_token(email: str, token: str) -> bool:
     """Used by MQTT broker to validate ESP32 credentials."""
-    with Session(engine) as s:
-        u = s.query(User).filter_by(email=email).first()
-        return u is not None and u.deviceToken == token
+    try:
+        with Session(engine) as s:
+            u = s.query(User).filter_by(email=email).first()
+            stored = u.deviceToken if u else None
+            ok = u is not None and stored == token
+            print(f"[AUTH] email={email!r} found={u is not None} token_match={ok} stored={stored!r} got={token!r}")
+            return ok
+    except Exception as e:
+        print(f"[AUTH] DB error: {e}")
+        return False
