@@ -2,6 +2,8 @@
 Paint Mixer — localhost shutdown
 Stops FastAPI (port 8000), Angular (port 4200), and Docker containers.
 Run from the repo root: py stop_local.py
+
+test
 """
 
 import subprocess, sys, io
