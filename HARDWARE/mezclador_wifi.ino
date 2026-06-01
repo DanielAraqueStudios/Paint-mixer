@@ -1,30 +1,23 @@
 // ============================================================
 //  MEZCLADOR DE PINTURA — ESP32
-//  Modo: LOCALHOST (WiFi + MQTT sin TLS)
-//  Broker MQTT corre en el PC al que se conecta el hotspot.
+//  Credenciales WiFi y MQTT se ingresan por UART (Serial Monitor)
+//  y se guardan en flash (NVS) con la librería Preferences.
 //
-//  Para modo CLOUD (AWS IoT Core + TLS):
-//    1. Cambiar MQTT_SERVER al endpoint de AWS IoT
-//    2. Cambiar MQTT_PORT a 8883
-//    3. Agregar WiFiClientSecure + certificados AWS
+//  Primer arranque o CONFIG_MODE:
+//    Abre Serial Monitor a 115200 y sigue las instrucciones.
+//  Arranques siguientes usan los valores guardados.
+//  Para reconfigurar: escribe "config" en el Serial Monitor.
 // ============================================================
 
 #include <WiFi.h>
 #include <PubSubClient.h>
 #include <ArduinoJson.h>
-
-// ── Credenciales WiFi (hotspot del PC) ──────────────────────
-#define WIFI_SSID   "a"
-#define WIFI_PASS   "12345678"
-
-// ── Broker MQTT (IP del PC en el hotspot — usualmente 192.168.137.1) ──
-#define MQTT_SERVER "192.168.137.1"
-#define MQTT_PORT   1883
-#define MQTT_CLIENT "esp32-mezclador"
+#include <Preferences.h>
 
 // ── Tópicos ──────────────────────────────────────────────────
 #define TOPIC_CMD    "mixer/command"
 #define TOPIC_STATUS "mixer/status"
+#define MQTT_CLIENT  "esp32-mezclador"
 
 // ── Pines L298N #1 ──────────────────────────────────────────
 #define BLANCA_IN1  13
@@ -46,18 +39,26 @@ float caudal_roja   = 3.16;
 float caudal_verde  = 3.16;
 float caudal_azul   = 3.16;
 
-#define TIEMPO_MEZCLA   15000  // ms
-#define PAUSA_BOMBAS      300  // ms between pumps
+#define TIEMPO_MEZCLA   15000
+#define PAUSA_BOMBAS      300
 
 // ── Estado global ────────────────────────────────────────────
 int  currentCommandId = -1;
 bool busy             = false;
 
+Preferences prefs;
 WiFiClient   wifiClient;
 PubSubClient mqtt(wifiClient);
 
+// ── Config stored in NVS ─────────────────────────────────────
+char cfg_ssid[64];
+char cfg_pass[64];
+char cfg_host[128];
+int  cfg_port;
+char cfg_user[128];   // email
+char cfg_token[64];   // 32-char hex token
+
 // ── State machine ────────────────────────────────────────────
-// Each step: turn pump ON for `onMs`, then OFF, wait `pauseMs`
 struct Step {
   const char* nombre;
   int         in1, in2;
@@ -65,14 +66,84 @@ struct Step {
   unsigned long pauseMs;
 };
 
-static Step   steps[5];   // blanca, roja, verde, azul, mezcla
+static Step   steps[5];
 static int    stepCount  = 0;
 static int    stepIdx    = 0;
-static bool   stepActive = false;   // pump is currently ON
 static unsigned long stepStart = 0;
 
-enum MixPhase { PHASE_IDLE, PHASE_PUMP_ON, PHASE_PUMP_PAUSE, PHASE_MIX_ON, PHASE_MIX_PAUSE };
+enum MixPhase { PHASE_IDLE, PHASE_PUMP_ON, PHASE_PUMP_PAUSE, PHASE_MIX_ON };
 static MixPhase phase = PHASE_IDLE;
+
+// ── UART helpers ─────────────────────────────────────────────
+String readLine(const char* prompt) {
+  Serial.print(prompt);
+  Serial.flush();
+  String line = "";
+  while (true) {
+    if (Serial.available()) {
+      char c = Serial.read();
+      if (c == '\n' || c == '\r') {
+        if (line.length() > 0) { Serial.println(); return line; }
+      } else {
+        line += c;
+        Serial.print(c);
+      }
+    }
+  }
+}
+
+// ── Config mode ──────────────────────────────────────────────
+void runConfigMode() {
+  Serial.println("\n╔══════════════════════════════════╗");
+  Serial.println("║     MODO CONFIGURACIÓN UART      ║");
+  Serial.println("╚══════════════════════════════════╝");
+  Serial.println("Ingresa los valores a continuación.\n");
+
+  String s;
+
+  s = readLine("WiFi SSID          : ");  s.toCharArray(cfg_ssid, sizeof(cfg_ssid));
+  s = readLine("WiFi Contraseña    : ");  s.toCharArray(cfg_pass, sizeof(cfg_pass));
+  s = readLine("MQTT Host (Railway): ");  s.toCharArray(cfg_host, sizeof(cfg_host));
+  s = readLine("MQTT Puerto        : ");  cfg_port = s.toInt();
+  s = readLine("MQTT Usuario (email): "); s.toCharArray(cfg_user, sizeof(cfg_user));
+  s = readLine("MQTT Token (32 hex): ");  s.toCharArray(cfg_token, sizeof(cfg_token));
+
+  prefs.begin("mixer", false);
+  prefs.putString("ssid",  cfg_ssid);
+  prefs.putString("pass",  cfg_pass);
+  prefs.putString("host",  cfg_host);
+  prefs.putInt   ("port",  cfg_port);
+  prefs.putString("user",  cfg_user);
+  prefs.putString("token", cfg_token);
+  prefs.end();
+
+  Serial.println("\n✔ Configuración guardada en flash.");
+  Serial.println("Reiniciando...\n");
+  delay(1000);
+  ESP.restart();
+}
+
+// ── Load config ───────────────────────────────────────────────
+bool loadConfig() {
+  prefs.begin("mixer", true);
+  String ssid  = prefs.getString("ssid",  "");
+  String pass  = prefs.getString("pass",  "");
+  String host  = prefs.getString("host",  "");
+  int    port  = prefs.getInt   ("port",  0);
+  String user  = prefs.getString("user",  "");
+  String token = prefs.getString("token", "");
+  prefs.end();
+
+  if (ssid.isEmpty() || host.isEmpty() || user.isEmpty() || token.isEmpty()) return false;
+
+  ssid.toCharArray(cfg_ssid,  sizeof(cfg_ssid));
+  pass.toCharArray(cfg_pass,  sizeof(cfg_pass));
+  host.toCharArray(cfg_host,  sizeof(cfg_host));
+  cfg_port = port;
+  user.toCharArray(cfg_user,  sizeof(cfg_user));
+  token.toCharArray(cfg_token, sizeof(cfg_token));
+  return true;
+}
 
 // ── Helpers ───────────────────────────────────────────────────
 unsigned long tiempoMs(float ml, float caudal) {
@@ -91,11 +162,11 @@ void publicarEstado(const char* status) {
   Serial.printf("[MQTT] → mixer/status: %s\n", payload);
 }
 
-// ── Start a mix sequence (non-blocking) ──────────────────────
+// ── Mix sequence ─────────────────────────────────────────────
 void iniciarMezcla(float ml_blanca, float ml_roja, float ml_verde, float ml_azul) {
   Serial.println("\n==============================");
   Serial.println(" INICIANDO MEZCLA");
-  Serial.printf("  Blanca: %.1f ml | Roja: %.1f ml | Verde: %.1f ml | Azul: %.1f ml\n",
+  Serial.printf("  Blanca: %.1f | Roja: %.1f | Verde: %.1f | Azul: %.1f ml\n",
                 ml_blanca, ml_roja, ml_verde, ml_azul);
   Serial.println("------------------------------");
 
@@ -104,7 +175,6 @@ void iniciarMezcla(float ml_blanca, float ml_roja, float ml_verde, float ml_azul
   if (ml_roja   > 0) steps[stepCount++] = { "ROJA",   ROJA_IN1,   ROJA_IN2,   tiempoMs(ml_roja,   caudal_roja),   PAUSA_BOMBAS };
   if (ml_verde  > 0) steps[stepCount++] = { "VERDE",  VERDE_IN1,  VERDE_IN2,  tiempoMs(ml_verde,  caudal_verde),  PAUSA_BOMBAS };
   if (ml_azul   > 0) steps[stepCount++] = { "AZUL",   AZUL_IN1,   AZUL_IN2,   tiempoMs(ml_azul,   caudal_azul),   PAUSA_BOMBAS };
-  // mix motor step (reuse Step struct, pauseMs unused)
   steps[stepCount++] = { "MEZCLA", MIX_IN1, MIX_IN2, TIEMPO_MEZCLA, 0 };
 
   stepIdx   = 0;
@@ -116,7 +186,6 @@ void iniciarMezcla(float ml_blanca, float ml_roja, float ml_verde, float ml_azul
   publicarEstado("mixing");
 }
 
-// ── Tick — called every loop() iteration ─────────────────────
 void tickMezcla() {
   if (phase == PHASE_IDLE) return;
 
@@ -125,80 +194,53 @@ void tickMezcla() {
   Step&         s       = steps[stepIdx];
 
   switch (phase) {
-
     case PHASE_PUMP_ON:
       if (elapsed >= s.onMs) {
         bombaOFF(s.in1, s.in2);
-        if (s.pauseMs > 0) {
-          stepStart = now;
-          phase     = PHASE_PUMP_PAUSE;
-        } else {
-          // last step (mezcla) has no pause — go straight to done
-          phase = PHASE_MIX_PAUSE;
-          stepStart = now;
-        }
+        if (s.pauseMs > 0) { stepStart = now; phase = PHASE_PUMP_PAUSE; }
+        else               { stepStart = now; phase = PHASE_IDLE; busy = false; currentCommandId = -1;
+                             Serial.println("  ✓ Completado.\n==============================\n");
+                             publicarEstado("done"); }
       }
       break;
 
     case PHASE_PUMP_PAUSE:
       if (elapsed >= s.pauseMs) {
         stepIdx++;
-        if (stepIdx >= stepCount) {
-          // shouldn't happen — mezcla step has pauseMs=0
-          phase = PHASE_IDLE;
-          return;
-        }
+        if (stepIdx >= stepCount) { phase = PHASE_IDLE; return; }
         Step& next = steps[stepIdx];
-        // last step is the mix motor — use PHASE_MIX_ON
-        if (stepIdx == stepCount - 1) {
-          Serial.printf("  → %s: %lu ms\n", next.nombre, next.onMs);
-          bombaON(next.in1, next.in2);
-          stepStart = now;
-          phase     = PHASE_MIX_ON;
-        } else {
-          Serial.printf("  → %s: %lu ms\n", next.nombre, next.onMs);
-          bombaON(next.in1, next.in2);
-          stepStart = now;
-          phase     = PHASE_PUMP_ON;
-        }
+        Serial.printf("  → %s: %lu ms\n", next.nombre, next.onMs);
+        bombaON(next.in1, next.in2);
+        stepStart = now;
+        phase = (stepIdx == stepCount - 1) ? PHASE_MIX_ON : PHASE_PUMP_ON;
       }
       break;
 
     case PHASE_MIX_ON:
       if (elapsed >= s.onMs) {
         bombaOFF(s.in1, s.in2);
-        phase     = PHASE_IDLE;
-        busy      = false;
-        currentCommandId = -1;
-        Serial.println("  ✓ Completado.");
-        Serial.println("==============================\n");
+        phase = PHASE_IDLE; busy = false; currentCommandId = -1;
+        Serial.println("  ✓ Completado.\n==============================\n");
         publicarEstado("done");
       }
       break;
 
-    default:
-      break;
+    default: break;
   }
 }
 
-// ── Callback MQTT ─────────────────────────────────────────────
+// ── MQTT callback ─────────────────────────────────────────────
 void onMqttMessage(char* topic, byte* payload, unsigned int length) {
-  if (busy) {
-    Serial.println("[MQTT] Ocupado, orden ignorada.");
-    return;
-  }
+  if (busy) { Serial.println("[MQTT] Ocupado, orden ignorada."); return; }
 
   char buf[256];
   if (length >= sizeof(buf)) return;
-  memcpy(buf, payload, length);
-  buf[length] = '\0';
-
+  memcpy(buf, payload, length); buf[length] = '\0';
   Serial.printf("[MQTT] ← %s: %s\n", topic, buf);
 
   JsonDocument doc;
   if (deserializeJson(doc, buf) != DeserializationError::Ok) {
-    Serial.println("[MQTT] JSON inválido");
-    return;
+    Serial.println("[MQTT] JSON inválido"); return;
   }
 
   currentCommandId = doc["id"] | -1;
@@ -208,9 +250,7 @@ void onMqttMessage(char* topic, byte* payload, unsigned int length) {
   float ml_azul    = doc["mlAzul"]   | 0.0f;
 
   if (ml_blanca + ml_roja + ml_verde + ml_azul > 700.1f) {
-    Serial.println("ERROR: la suma supera 700 ml.");
-    publicarEstado("error");
-    return;
+    Serial.println("ERROR: suma > 700 ml"); publicarEstado("error"); return;
   }
 
   publicarEstado("received");
@@ -220,12 +260,9 @@ void onMqttMessage(char* topic, byte* payload, unsigned int length) {
 
 // ── WiFi ─────────────────────────────────────────────────────
 void conectarWiFi() {
-  Serial.printf("Conectando a %s", WIFI_SSID);
-  WiFi.begin(WIFI_SSID, WIFI_PASS);
-  while (WiFi.status() != WL_CONNECTED) {
-    delay(500);
-    Serial.print(".");
-  }
+  Serial.printf("Conectando a %s", cfg_ssid);
+  WiFi.begin(cfg_ssid, cfg_pass);
+  while (WiFi.status() != WL_CONNECTED) { delay(500); Serial.print("."); }
   Serial.printf("\nWiFi OK — IP: %s\n", WiFi.localIP().toString().c_str());
 }
 
@@ -233,7 +270,7 @@ void conectarWiFi() {
 void conectarMQTT() {
   while (!mqtt.connected()) {
     Serial.print("Conectando MQTT...");
-    if (mqtt.connect(MQTT_CLIENT)) {
+    if (mqtt.connect(MQTT_CLIENT, cfg_user, cfg_token)) {
       Serial.println(" OK");
       mqtt.subscribe(TOPIC_CMD);
       Serial.printf("Suscrito a %s\n", TOPIC_CMD);
@@ -247,6 +284,7 @@ void conectarMQTT() {
 // ── Setup ─────────────────────────────────────────────────────
 void setup() {
   Serial.begin(115200);
+  delay(500);
 
   int pines[] = {
     BLANCA_IN1, BLANCA_IN2, ROJA_IN1, ROJA_IN2,
@@ -255,9 +293,31 @@ void setup() {
   };
   for (int p : pines) { pinMode(p, OUTPUT); digitalWrite(p, LOW); }
 
+  // Check for config mode: send any char within 3 s, or no config stored
+  Serial.println("\nEscribe 'config' en 3 s para reconfigurar...");
+  unsigned long t0 = millis();
+  String incoming = "";
+  while (millis() - t0 < 3000) {
+    if (Serial.available()) {
+      char c = Serial.read();
+      if (c != '\n' && c != '\r') incoming += c;
+    }
+  }
+  bool forceConfig = (incoming.indexOf("config") >= 0);
+
+  if (forceConfig || !loadConfig()) {
+    runConfigMode();  // restarts after saving
+  }
+
+  Serial.println("──────────────────────────────────");
+  Serial.printf("SSID : %s\n", cfg_ssid);
+  Serial.printf("Host : %s:%d\n", cfg_host, cfg_port);
+  Serial.printf("User : %s\n", cfg_user);
+  Serial.println("──────────────────────────────────");
+
   conectarWiFi();
 
-  mqtt.setServer(MQTT_SERVER, MQTT_PORT);
+  mqtt.setServer(cfg_host, cfg_port);
   mqtt.setCallback(onMqttMessage);
   mqtt.setBufferSize(512);
 
