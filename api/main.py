@@ -214,7 +214,9 @@ def get_profile(user=Depends(current_user)):
 
 _static = Path(__file__).parent / "static"
 if _static.exists():
-    app.mount("/assets", StaticFiles(directory=str(_static / "assets")), name="assets")
+    _assets = _static / "assets"
+    if _assets.exists():
+        app.mount("/assets", StaticFiles(directory=str(_assets)), name="assets")
 
     @app.get("/{full_path:path}")
     def spa(full_path: str):
