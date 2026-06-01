@@ -211,7 +211,7 @@ void tickMezcla() {
     case PHASE_PUMP_PAUSE:
       if (elapsed >= s.pauseMs) {
         stepIdx++;
-        if (stepIdx >= stepCount) { phase = PHASE_IDLE; return; }
+        if (stepIdx >= stepCount) { phase = PHASE_IDLE; busy = false; currentCommandId = -1; return; }
         Step& next = steps[stepIdx];
         Serial.printf("  → %s: %lu ms\n", next.nombre, next.onMs);
         stepStart = now;
@@ -292,9 +292,6 @@ void conectarMQTT() {
 
 // ── Setup ─────────────────────────────────────────────────────
 void setup() {
-  Serial.begin(115200);
-  delay(500);
-
   int pines[] = {
     BLANCA_IN1, BLANCA_IN2, ROJA_IN1, ROJA_IN2,
     VERDE_IN1,  VERDE_IN2,  AZUL_IN1, AZUL_IN2,
@@ -303,6 +300,9 @@ void setup() {
   for (int p : pines) { pinMode(p, OUTPUT); digitalWrite(p, LOW); }
   ledcAttach(ENM, 1000, 8);
   ledcWrite(ENM, 0);
+
+  Serial.begin(115200);
+  delay(500);
 
   // Check for config mode: send any char within 3 s, or no config stored
   Serial.println("\nEscribe 'config' en 3 s para reconfigurar...");
@@ -338,8 +338,10 @@ void setup() {
 
 // ── Loop ─────────────────────────────────────────────────────
 void loop() {
-  if (WiFi.status() != WL_CONNECTED) conectarWiFi();
-  if (!mqtt.connected()) conectarMQTT();
+  tickMezcla();  // always runs — never block while pumps are active
+  if (!busy) {
+    if (WiFi.status() != WL_CONNECTED) conectarWiFi();
+    if (!mqtt.connected()) conectarMQTT();
+  }
   mqtt.loop();
-  tickMezcla();
 }
