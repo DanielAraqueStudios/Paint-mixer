@@ -19,5 +19,5 @@ COPY api/ .
 COPY --from=web-build /app/web/dist/web/browser ./static
 
 EXPOSE 8000
-EXPOSE 1883
+EXPOSE 1884
 CMD uvicorn main:app --host 0.0.0.0 --port ${PORT:-8000}

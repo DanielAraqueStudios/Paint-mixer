@@ -36,7 +36,7 @@ init_db()
 _broker = MqttBroker()
 _broker.auth_callback = check_device_token
 
-MQTT_PORT = int(os.environ.get("MQTT_PORT", 1883))
+MQTT_PORT = int(os.environ.get("MQTT_PORT", 1884))
 
 
 async def _on_mqtt_message(topic: str, payload: bytes):
