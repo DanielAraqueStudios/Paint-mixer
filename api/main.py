@@ -1,49 +1,39 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Depends
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
-from sqlalchemy import create_engine, Column, Integer, String, Float, DateTime, text, select, func
-from sqlalchemy.orm import DeclarativeBase, Session
-from dotenv import load_dotenv
+from sqlalchemy.orm import Session
+from sqlalchemy import text
+from urllib.parse import urlparse
 import paho.mqtt.client as mqtt_lib
 import json, os, threading
 from pathlib import Path
-from urllib.parse import urlparse
 
-# Load .env from api/ first, then fall back to repo root
-_here = Path(__file__).parent
-load_dotenv(_here / ".env")
-load_dotenv(_here.parent / ".env")
-
-DATABASE_URL = os.environ["DATABASE_URL"]
-MQTT_URL     = os.environ.get("MQTT_URL", "mqtt://localhost:1883")
-
-engine = create_engine(DATABASE_URL)
+from models import engine, Base, Command, SavedColor
+from auth import router as auth_router, current_user
 
 
-class Base(DeclarativeBase):
-    pass
+# ── DB init ───────────────────────────────────────────────────────────────────
+
+def init_db():
+    Base.metadata.create_all(engine)
+    with engine.connect() as conn:
+        try:
+            conn.execute(text('ALTER TABLE "Command" ADD COLUMN "userId" INTEGER REFERENCES "User"(id)'))
+            conn.commit()
+        except Exception:
+            conn.rollback()
+
+init_db()
 
 
-class Command(Base):
-    __tablename__ = "Command"
-    id        = Column(Integer,  primary_key=True, autoincrement=True)
-    color     = Column(String,   nullable=False)
-    mlBlanca  = Column(Float,    nullable=False)
-    mlRoja    = Column(Float,    nullable=False)
-    mlVerde   = Column(Float,    nullable=False)
-    mlAzul    = Column(Float,    nullable=False)
-    status    = Column(String,   default="pending")
-    createdAt = Column(DateTime, default=func.now())
-    updatedAt = Column(DateTime, default=func.now(), onupdate=func.now())
+# ── MQTT ──────────────────────────────────────────────────────────────────────
 
-
-# ── MQTT ─────────────────────────────────────────────────────────────────────
+MQTT_URL = os.environ.get("MQTT_URL", "mqtt://localhost:1883")
 
 def _parse_url(url: str):
     p = urlparse(url)
     return p.hostname or "localhost", p.port or 1883, p.username, p.password
-
 
 _mqtt = mqtt_lib.Client(client_id="paintmixer-api", clean_session=True)
 _host, _port, _user, _pw = _parse_url(MQTT_URL)
@@ -82,9 +72,10 @@ def _mqtt_connect():
 threading.Thread(target=_mqtt_connect, daemon=True).start()
 
 
-# ── FastAPI ───────────────────────────────────────────────────────────────────
+# ── App ───────────────────────────────────────────────────────────────────────
 
 app = FastAPI()
+app.include_router(auth_router)
 
 
 @app.get("/api/health")
@@ -102,6 +93,8 @@ def health():
     return result
 
 
+# ── Commands ──────────────────────────────────────────────────────────────────
+
 class CommandIn(BaseModel):
     color:    str
     mlBlanca: float
@@ -112,20 +105,21 @@ class CommandIn(BaseModel):
 
 def _row(cmd: Command) -> dict:
     return {
-        "id":       cmd.id,
-        "color":    cmd.color,
-        "mlBlanca": cmd.mlBlanca,
-        "mlRoja":   cmd.mlRoja,
-        "mlVerde":  cmd.mlVerde,
-        "mlAzul":   cmd.mlAzul,
-        "status":   cmd.status,
+        "id":        cmd.id,
+        "color":     cmd.color,
+        "mlBlanca":  cmd.mlBlanca,
+        "mlRoja":    cmd.mlRoja,
+        "mlVerde":   cmd.mlVerde,
+        "mlAzul":    cmd.mlAzul,
+        "status":    cmd.status,
+        "createdAt": cmd.createdAt.isoformat() if cmd.createdAt else None,
     }
 
 
 @app.post("/api/command", status_code=201)
-def create_command(body: CommandIn):
+def create_command(body: CommandIn, user=Depends(current_user)):
     with Session(engine) as s:
-        cmd = Command(**body.model_dump())
+        cmd = Command(**body.model_dump(), userId=user["id"])
         s.add(cmd)
         s.commit()
         s.refresh(cmd)
@@ -155,7 +149,69 @@ def update_status(cmd_id: int, body: dict):
         return {"id": cmd.id, "status": cmd.status}
 
 
-# Serve Angular SPA in production (after `ng build`)
+# ── Saved colors ──────────────────────────────────────────────────────────────
+
+class ColorIn(BaseModel):
+    hex:       str
+    name:      str | None = None
+    imageData: str | None = None
+
+
+def _color_row(sc: SavedColor) -> dict:
+    return {
+        "id":        sc.id,
+        "hex":       sc.hex,
+        "name":      sc.name,
+        "imageData": sc.imageData,
+        "createdAt": sc.createdAt.isoformat() if sc.createdAt else None,
+    }
+
+
+@app.post("/api/colors", status_code=201)
+def save_color(body: ColorIn, user=Depends(current_user)):
+    with Session(engine) as s:
+        sc = SavedColor(userId=user["id"], hex=body.hex, name=body.name, imageData=body.imageData)
+        s.add(sc)
+        s.commit()
+        s.refresh(sc)
+        return _color_row(sc)
+
+
+@app.get("/api/colors")
+def get_colors(user=Depends(current_user)):
+    with Session(engine) as s:
+        rows = s.query(SavedColor).filter_by(userId=user["id"]).order_by(SavedColor.createdAt.desc()).all()
+        return [_color_row(r) for r in rows]
+
+
+@app.delete("/api/colors/{color_id}", status_code=204)
+def delete_color(color_id: int, user=Depends(current_user)):
+    with Session(engine) as s:
+        sc = s.get(SavedColor, color_id)
+        if not sc or sc.userId != user["id"]:
+            raise HTTPException(status_code=404, detail="Not found")
+        s.delete(sc)
+        s.commit()
+
+
+# ── Profile ───────────────────────────────────────────────────────────────────
+
+@app.get("/api/profile")
+def get_profile(user=Depends(current_user)):
+    with Session(engine) as s:
+        commands = (s.query(Command).filter_by(userId=user["id"])
+                    .order_by(Command.createdAt.desc()).all())
+        color_count = s.query(SavedColor).filter_by(userId=user["id"]).count()
+        return {
+            "email":       user["email"],
+            "totalMixes":  len(commands),
+            "savedColors": color_count,
+            "history":     [_row(c) for c in commands],
+        }
+
+
+# ── SPA fallback ──────────────────────────────────────────────────────────────
+
 _static = Path(__file__).parent / "static"
 if _static.exists():
     app.mount("/assets", StaticFiles(directory=str(_static / "assets")), name="assets")

@@ -1,41 +1,37 @@
-import { Component, signal, inject } from '@angular/core'
+import { Component, inject } from '@angular/core'
+import { RouterOutlet, RouterLink, RouterLinkActive } from '@angular/router'
 import { StatusBar } from './status-bar/status-bar'
-import { ColorGrid } from './color-grid/color-grid'
-import { MixSidebar } from './mix-sidebar/mix-sidebar'
-import { LogPanel } from './log-panel/log-panel'
 import { SystemStatus } from './system-status/system-status'
-import { COLORS, getMl } from './colors'
-import { ApiService } from './api.service'
+import { LogPanel } from './log-panel/log-panel'
+import { AuthService } from './auth/auth.service'
 
 @Component({
   selector: 'app-root',
-  imports: [StatusBar, ColorGrid, MixSidebar, LogPanel, SystemStatus],
+  imports: [RouterOutlet, RouterLink, RouterLinkActive, StatusBar, SystemStatus, LogPanel],
   template: `
     <div class="layout">
-      <!-- top bar -->
-      <header class="header">
-        <h1 class="title">Pinturas <span class="accent">124345</span></h1>
-        <span class="subtitle">Sistema de mezclado IoT</span>
-      </header>
+
+      <nav class="nav">
+        <span class="brand">Pinturas <span class="accent">124345</span></span>
+        <div class="nav-links">
+          <a routerLink="/"        routerLinkActive="active" [routerLinkActiveOptions]="{exact:true}">Catálogo</a>
+          <a routerLink="/scan"    routerLinkActive="active">Scanner</a>
+          <a routerLink="/profile" routerLinkActive="active">Perfil</a>
+        </div>
+        @if (auth.email()) {
+          <div class="nav-user">
+            <span class="user-email">{{ auth.email() }}</span>
+            <button class="logout-btn" (click)="auth.logout()">Salir</button>
+          </div>
+        }
+      </nav>
 
       <app-status-bar />
 
-      <!-- main content -->
-      <div class="body">
-        <section class="catalog">
-          <h2 class="section-title">Catálogo de colores</h2>
-          <app-color-grid [selectedIdx]="selectedIdx()" (select)="selectedIdx.set($event)" />
-        </section>
-
-        <div class="sidebar-wrap">
-          <app-mix-sidebar
-            [color]="selectedColor()"
-            [sending]="sending()"
-            (send)="handleSend()" />
-        </div>
+      <div class="content">
+        <router-outlet />
       </div>
 
-      <!-- bottom panels -->
       <div class="bottom-panels">
         <div class="bottom-panel status-panel">
           <app-system-status />
@@ -44,49 +40,42 @@ import { ApiService } from './api.service'
           <app-log-panel />
         </div>
       </div>
+
     </div>
   `,
   styles: [`
     .layout { display: flex; flex-direction: column; height: 100vh; background: #09090b; color: #f4f4f5; overflow: hidden; }
-    .header { padding: 20px 40px; border-bottom: 1px solid #27272a; display: flex; align-items: baseline; gap: 16px; flex-shrink: 0; }
-    .title { font-size: 22px; margin: 0; }
-    .accent { color: #fbbf24; font-style: italic; }
-    .subtitle { font-size: 11px; color: #52525b; text-transform: uppercase; letter-spacing: 0.12em; }
 
-    .body { display: flex; flex: 1; overflow: hidden; min-height: 0; }
-    .catalog { flex: 1; padding: 32px 40px; overflow-y: auto; }
-    .section-title { font-size: 14px; color: #71717a; margin: 0 0 16px; }
-    .sidebar-wrap { width: 300px; flex-shrink: 0; }
-
-    .bottom-panels {
-      display: flex;
-      height: 220px;
-      flex-shrink: 0;
-      border-top: 1px solid #27272a;
+    .nav {
+      display: flex; align-items: center; gap: 24px;
+      padding: 0 32px; height: 52px; flex-shrink: 0;
+      border-bottom: 1px solid #27272a; background: #09090b;
     }
+    .brand { font-size: 16px; font-weight: 600; white-space: nowrap; }
+    .accent { color: #fbbf24; font-style: italic; }
+    .nav-links { display: flex; gap: 4px; flex: 1; }
+    .nav-links a {
+      padding: 6px 14px; border-radius: 6px; font-size: 13px;
+      color: #71717a; text-decoration: none;
+    }
+    .nav-links a:hover { color: #e4e4e7; background: #18181b; }
+    .nav-links a.active { color: #f4f4f5; background: #27272a; }
+    .nav-user { display: flex; align-items: center; gap: 12px; margin-left: auto; }
+    .user-email { font-size: 12px; color: #52525b; max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .logout-btn {
+      padding: 5px 12px; border-radius: 6px; border: 1px solid #27272a;
+      background: transparent; color: #71717a; font-size: 12px; cursor: pointer;
+    }
+    .logout-btn:hover { border-color: #52525b; color: #a1a1aa; }
+
+    .content { display: flex; flex: 1; overflow: hidden; min-height: 0; }
+
+    .bottom-panels { display: flex; height: 220px; flex-shrink: 0; border-top: 1px solid #27272a; }
     .bottom-panel { overflow: hidden; }
     .status-panel { width: 260px; flex-shrink: 0; border-right: 1px solid #27272a; }
     .log-panel { flex: 1; }
   `]
 })
 export class App {
-  private api = inject(ApiService)
-  selectedIdx = signal<number | null>(null)
-  sending     = signal(false)
-
-  selectedColor() {
-    const i = this.selectedIdx()
-    return i !== null ? COLORS[i] : null
-  }
-
-  handleSend() {
-    const color = this.selectedColor()
-    if (!color) return
-    this.sending.set(true)
-    const ml = getMl(color)
-    this.api.sendCommand({ color: color.name, ...ml }).subscribe({
-      next:  () => this.sending.set(false),
-      error: () => this.sending.set(false),
-    })
-  }
+  auth = inject(AuthService)
 }
