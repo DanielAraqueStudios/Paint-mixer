@@ -1,0 +1,568 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Pinturas 124345 — Mezclador</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Mono:wght@400;500&family=Outfit:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0f0f0f;
+    --surface: #181818;
+    --surface2: #222222;
+    --border: #2e2e2e;
+    --text: #f0ede8;
+    --text-dim: #888;
+    --text-dimmer: #555;
+    --accent: #e8c97a;
+    --accent2: #c4a44e;
+    --danger: #e87a7a;
+    --success: #7ac99e;
+    --radius: 12px;
+  }
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  html { font-size: 16px; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Outfit', sans-serif;
+    font-weight: 300;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* ── Grain overlay ── */
+  body::before {
+    content: '';
+    position: fixed; inset: 0;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.75' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E");
+    pointer-events: none; z-index: 999;
+  }
+
+  /* ── Header ── */
+  header {
+    padding: 2rem 2.5rem 1.5rem;
+    border-bottom: 1px solid var(--border);
+    display: flex; align-items: baseline; gap: 1.5rem;
+    flex-wrap: wrap;
+  }
+  .brand { font-family: 'DM Serif Display', serif; font-size: 1.6rem; letter-spacing: -0.02em; }
+  .brand span { color: var(--accent); font-style: italic; }
+  .tagline { font-size: 0.75rem; color: var(--text-dim); letter-spacing: 0.12em; text-transform: uppercase; }
+
+  /* ── Status bar ── */
+  #status-bar {
+    padding: 0.6rem 2.5rem;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; gap: 0.75rem;
+    font-size: 0.78rem; color: var(--text-dim);
+    font-family: 'DM Mono', monospace;
+  }
+  .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--text-dimmer); }
+  .dot.ok { background: var(--success); box-shadow: 0 0 6px var(--success); }
+  .dot.err { background: var(--danger); }
+  .dot.pulse { animation: pulse 2s infinite; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.3} }
+
+  /* ── Main layout ── */
+  main { display: grid; grid-template-columns: 1fr 340px; gap: 0; flex: 1; }
+  @media(max-width:900px){ main { grid-template-columns: 1fr; } }
+
+  /* ── Color grid ── */
+  .panel { padding: 2rem 2.5rem; }
+  .panel-title {
+    font-family: 'DM Serif Display', serif;
+    font-size: 1.05rem; margin-bottom: 1.25rem;
+    color: var(--text-dim);
+    display: flex; align-items: center; gap: 0.5rem;
+  }
+  .panel-title::after { content: ''; flex: 1; height: 1px; background: var(--border); }
+
+  .filter-row {
+    display: flex; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 1.5rem;
+  }
+  .filter-btn {
+    background: transparent; border: 1px solid var(--border);
+    color: var(--text-dim); font-family: 'Outfit', sans-serif;
+    font-size: 0.75rem; padding: 0.3rem 0.8rem;
+    border-radius: 100px; cursor: pointer; transition: all 0.15s;
+    letter-spacing: 0.05em;
+  }
+  .filter-btn:hover, .filter-btn.active {
+    border-color: var(--accent); color: var(--accent);
+    background: rgba(232,201,122,0.06);
+  }
+
+  .color-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+    gap: 0.75rem;
+  }
+  .color-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden; cursor: pointer;
+    transition: transform 0.15s, border-color 0.15s, box-shadow 0.15s;
+    position: relative;
+  }
+  .color-card:hover { transform: translateY(-2px); border-color: #444; }
+  .color-card.selected {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 1px var(--accent), 0 4px 20px rgba(232,201,122,0.15);
+  }
+  .color-card.selected::after {
+    content: '✓';
+    position: absolute; top: 6px; right: 8px;
+    font-size: 0.7rem; color: var(--accent);
+    background: rgba(0,0,0,0.6); border-radius: 50%;
+    width: 18px; height: 18px;
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 500;
+  }
+  .swatch { width: 100%; height: 64px; }
+  .card-info { padding: 0.6rem 0.7rem; }
+  .card-name { font-size: 0.78rem; font-weight: 400; line-height: 1.3; margin-bottom: 0.2rem; }
+  .card-ml { font-size: 0.68rem; color: var(--text-dim); font-family: 'DM Mono', monospace; }
+
+  /* ── Sidebar ── */
+  aside {
+    border-left: 1px solid var(--border);
+    padding: 2rem 1.75rem;
+    display: flex; flex-direction: column; gap: 1.5rem;
+    position: sticky; top: 0; height: 100vh; overflow-y: auto;
+  }
+
+  .preview-swatch {
+    width: 100%; height: 120px; border-radius: var(--radius);
+    background: #2a2a2a;
+    transition: background 0.4s ease;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .preview-swatch .empty-label {
+    font-size: 0.75rem; color: var(--text-dimmer);
+    letter-spacing: 0.1em; text-transform: uppercase;
+  }
+
+  .selected-name {
+    font-family: 'DM Serif Display', serif;
+    font-size: 1.4rem; line-height: 1.2;
+    min-height: 2rem;
+  }
+
+  .ml-table { width: 100%; border-collapse: collapse; }
+  .ml-table tr { border-bottom: 1px solid var(--border); }
+  .ml-table tr:last-child { border-bottom: none; }
+  .ml-table td { padding: 0.55rem 0; font-size: 0.82rem; }
+  .ml-table td:first-child { color: var(--text-dim); }
+  .ml-table td:last-child {
+    text-align: right; font-family: 'DM Mono', monospace;
+    font-size: 0.78rem;
+  }
+  .ml-bar-wrap { height: 3px; background: var(--surface2); border-radius: 2px; margin-top: 3px; }
+  .ml-bar { height: 3px; border-radius: 2px; transition: width 0.4s; }
+
+  .send-btn {
+    width: 100%; padding: 0.85rem;
+    background: var(--accent); color: #111;
+    font-family: 'Outfit', sans-serif; font-weight: 500;
+    font-size: 0.9rem; letter-spacing: 0.04em;
+    border: none; border-radius: var(--radius);
+    cursor: pointer; transition: background 0.15s, transform 0.1s;
+  }
+  .send-btn:hover { background: var(--accent2); }
+  .send-btn:active { transform: scale(0.98); }
+  .send-btn:disabled {
+    background: var(--surface2); color: var(--text-dimmer);
+    cursor: not-allowed; transform: none;
+  }
+
+  .log-box {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 0.75rem 1rem;
+    font-family: 'DM Mono', monospace;
+    font-size: 0.7rem;
+    color: var(--text-dim);
+    max-height: 140px;
+    overflow-y: auto;
+    line-height: 1.7;
+  }
+  .log-entry { display: block; }
+  .log-entry.ok { color: var(--success); }
+  .log-entry.err { color: var(--danger); }
+  .log-entry.info { color: var(--accent); }
+
+  /* ── Config modal ── */
+  .cfg-btn {
+    background: transparent; border: 1px solid var(--border);
+    color: var(--text-dim); padding: 0.4rem 0.9rem;
+    font-family: 'Outfit', sans-serif; font-size: 0.75rem;
+    border-radius: 100px; cursor: pointer; transition: all 0.15s;
+    margin-left: auto;
+  }
+  .cfg-btn:hover { border-color: var(--text-dim); color: var(--text); }
+
+  .modal-overlay {
+    display: none; position: fixed; inset: 0;
+    background: rgba(0,0,0,0.75); z-index: 100;
+    align-items: center; justify-content: center;
+  }
+  .modal-overlay.open { display: flex; }
+  .modal {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 2rem; width: 420px; max-width: 95vw;
+  }
+  .modal h2 { font-family: 'DM Serif Display', serif; font-size: 1.2rem; margin-bottom: 1.25rem; }
+  .field { margin-bottom: 1rem; }
+  .field label { display: block; font-size: 0.75rem; color: var(--text-dim); margin-bottom: 0.3rem; letter-spacing: 0.06em; text-transform: uppercase; }
+  .field input {
+    width: 100%; background: var(--surface2);
+    border: 1px solid var(--border); color: var(--text);
+    font-family: 'DM Mono', monospace; font-size: 0.8rem;
+    padding: 0.5rem 0.75rem; border-radius: 8px;
+    outline: none; transition: border-color 0.15s;
+  }
+  .field input:focus { border-color: var(--accent); }
+  .modal-btns { display: flex; gap: 0.75rem; margin-top: 1.25rem; }
+  .btn-primary {
+    flex: 1; padding: 0.65rem;
+    background: var(--accent); color: #111;
+    border: none; border-radius: 8px; font-family: 'Outfit', sans-serif;
+    font-weight: 500; cursor: pointer;
+  }
+  .btn-secondary {
+    padding: 0.65rem 1.25rem;
+    background: transparent; color: var(--text-dim);
+    border: 1px solid var(--border); border-radius: 8px;
+    font-family: 'Outfit', sans-serif; cursor: pointer;
+  }
+</style>
+</head>
+<body>
+
+<!-- Config Modal -->
+<div class="modal-overlay" id="modal">
+  <div class="modal">
+    <h2>Configuración Firebase</h2>
+    <div class="field">
+      <label>API Key</label>
+      <input id="cfg-apiKey" placeholder="AIzaSy..." />
+    </div>
+    <div class="field">
+      <label>Database URL</label>
+      <input id="cfg-dbUrl" placeholder="https://tu-proyecto-default-rtdb.firebaseio.com" />
+    </div>
+    <div class="field">
+      <label>Project ID</label>
+      <input id="cfg-projectId" placeholder="tu-proyecto-firebase" />
+    </div>
+    <p style="font-size:0.72rem; color:var(--text-dimmer); margin-top:0.5rem;">
+      Estos datos se guardan solo en este navegador (localStorage).
+    </p>
+    <div class="modal-btns">
+      <button class="btn-secondary" onclick="closeModal()">Cancelar</button>
+      <button class="btn-primary" onclick="saveConfig()">Guardar y conectar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Header -->
+<header>
+  <div class="brand">Pinturas <span>124345</span></div>
+  <div class="tagline">Sistema de mezclado IoT</div>
+  <button class="cfg-btn" onclick="openModal()">⚙ Firebase</button>
+</header>
+
+<!-- Status bar -->
+<div id="status-bar">
+  <div class="dot pulse" id="dot"></div>
+  <span id="status-text">Esperando configuración de Firebase...</span>
+</div>
+
+<!-- Main -->
+<main>
+  <!-- Color grid -->
+  <section class="panel">
+    <div class="panel-title">Catálogo de colores</div>
+    <div class="filter-row" id="filters"></div>
+    <div class="color-grid" id="grid"></div>
+  </section>
+
+  <!-- Sidebar -->
+  <aside>
+    <div class="preview-swatch" id="preview">
+      <span class="empty-label">sin selección</span>
+    </div>
+    <div class="selected-name" id="sel-name">—</div>
+
+    <table class="ml-table" id="ml-table">
+      <tr>
+        <td>Base blanca</td>
+        <td id="ml-w">— ml</td>
+      </tr>
+      <tr>
+        <td>Rojo</td>
+        <td id="ml-r">— ml</td>
+      </tr>
+      <tr>
+        <td>Verde</td>
+        <td id="ml-g">— ml</td>
+      </tr>
+      <tr>
+        <td>Azul</td>
+        <td id="ml-b">— ml</td>
+      </tr>
+    </table>
+
+    <button class="send-btn" id="send-btn" disabled onclick="enviarOrden()">
+      Enviar orden a la ESP32
+    </button>
+
+    <div>
+      <div class="panel-title" style="font-size:0.8rem; margin-bottom:0.5rem;">Registro</div>
+      <div class="log-box" id="log">
+        <span class="log-entry">Esperando acciones...</span>
+      </div>
+    </div>
+  </aside>
+</main>
+
+<!-- Firebase SDK -->
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+import { getDatabase, ref, set, onValue } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
+
+// ── Paleta de 40 colores (unidad = 22ml) ──────────────────────
+const U = 22;
+const COLORES = [
+  {name:"Blanco puro",    r:0,  g:0,  b:0,  dom:"Neutro"},
+  {name:"Rojo puro",      r:14, g:0,  b:0,  dom:"R"},
+  {name:"Verde puro",     r:0,  g:14, b:0,  dom:"G"},
+  {name:"Azul puro",      r:0,  g:0,  b:14, dom:"B"},
+  {name:"Amarillo",       r:8,  g:8,  b:0,  dom:"Mix"},
+  {name:"Cyan",           r:0,  g:8,  b:8,  dom:"Mix"},
+  {name:"Magenta",        r:8,  g:0,  b:8,  dom:"Mix"},
+  {name:"Naranja",        r:10, g:4,  b:0,  dom:"R"},
+  {name:"Naranja claro",  r:7,  g:3,  b:0,  dom:"R"},
+  {name:"Rojo oscuro",    r:11, g:1,  b:1,  dom:"R"},
+  {name:"Rojo rosado",    r:8,  g:0,  b:3,  dom:"R"},
+  {name:"Rosa claro",     r:5,  g:0,  b:2,  dom:"R"},
+  {name:"Rosa fuerte",    r:7,  g:0,  b:4,  dom:"R"},
+  {name:"Salmón",         r:6,  g:2,  b:1,  dom:"R"},
+  {name:"Durazno",        r:5,  g:3,  b:1,  dom:"R"},
+  {name:"Verde lima",     r:3,  g:10, b:0,  dom:"G"},
+  {name:"Verde oliva",    r:4,  g:7,  b:1,  dom:"G"},
+  {name:"Verde oscuro",   r:1,  g:11, b:1,  dom:"G"},
+  {name:"Verde menta",    r:2,  g:8,  b:4,  dom:"G"},
+  {name:"Verde agua",     r:0,  g:7,  b:5,  dom:"G"},
+  {name:"Verde bosque",   r:1,  g:9,  b:2,  dom:"G"},
+  {name:"Azul cielo",     r:0,  g:3,  b:9,  dom:"B"},
+  {name:"Azul marino",    r:0,  g:1,  b:12, dom:"B"},
+  {name:"Azul real",      r:1,  g:2,  b:10, dom:"B"},
+  {name:"Azul turquesa",  r:0,  g:5,  b:7,  dom:"B"},
+  {name:"Azul acero",     r:2,  g:3,  b:8,  dom:"B"},
+  {name:"Azul lavanda",   r:4,  g:2,  b:7,  dom:"B"},
+  {name:"Morado",         r:6,  g:0,  b:6,  dom:"Mix"},
+  {name:"Violeta",        r:5,  g:1,  b:7,  dom:"Mix"},
+  {name:"Púrpura",        r:7,  g:0,  b:5,  dom:"Mix"},
+  {name:"Café/Marrón",    r:7,  g:3,  b:2,  dom:"R"},
+  {name:"Café claro",     r:5,  g:3,  b:2,  dom:"R"},
+  {name:"Terracota",      r:9,  g:2,  b:1,  dom:"R"},
+  {name:"Gris claro",     r:2,  g:2,  b:2,  dom:"Neutro"},
+  {name:"Gris medio",     r:4,  g:4,  b:4,  dom:"Neutro"},
+  {name:"Gris oscuro",    r:6,  g:6,  b:6,  dom:"Neutro"},
+  {name:"Gris azulado",   r:2,  g:3,  b:5,  dom:"Neutro"},
+  {name:"Gris verdoso",   r:2,  g:4,  b:2,  dom:"Neutro"},
+  {name:"Beige",          r:3,  g:3,  b:1,  dom:"Neutro"},
+  {name:"Crema",          r:2,  g:2,  b:0,  dom:"Neutro"},
+];
+
+function toRgb(r, g, b) {
+  const mix = v => Math.round(v + (255 - v) * 0.55);
+  return `rgb(${mix(Math.round(r/14*255))},${mix(Math.round(g/14*255))},${mix(Math.round(b/14*255))})`;
+}
+
+// ── Estado ────────────────────────────────────────────────────
+let selectedIdx = null;
+let db = null;
+let firebaseOk = false;
+
+// ── Render grid ───────────────────────────────────────────────
+const grid = document.getElementById('grid');
+const filters = document.getElementById('filters');
+let activeDom = '';
+
+const doms = ['Todos', 'R', 'G', 'B', 'Mix', 'Neutro'];
+doms.forEach(d => {
+  const btn = document.createElement('button');
+  btn.className = 'filter-btn' + (d === 'Todos' ? ' active' : '');
+  btn.textContent = d === 'R' ? 'Rojos' : d === 'G' ? 'Verdes' : d === 'B' ? 'Azules' : d;
+  btn.onclick = () => {
+    document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    activeDom = d === 'Todos' ? '' : d;
+    renderGrid();
+  };
+  filters.appendChild(btn);
+});
+
+function renderGrid() {
+  grid.innerHTML = '';
+  COLORES.forEach((c, i) => {
+    if (activeDom && c.dom !== activeDom) return;
+    const rml = c.r * U, gml = c.g * U, bml = c.b * U;
+    const wml = 700 - rml - gml - bml;
+    const card = document.createElement('div');
+    card.className = 'color-card' + (selectedIdx === i ? ' selected' : '');
+    card.innerHTML = `
+      <div class="swatch" style="background:${toRgb(c.r,c.g,c.b)}"></div>
+      <div class="card-info">
+        <div class="card-name">${c.name}</div>
+        <div class="card-ml">B:${wml} R:${rml} G:${gml} Az:${bml}</div>
+      </div>`;
+    card.onclick = () => selectColor(i);
+    grid.appendChild(card);
+  });
+}
+
+function selectColor(i) {
+  selectedIdx = i;
+  renderGrid();
+  const c = COLORES[i];
+  const rml = c.r * U, gml = c.g * U, bml = c.b * U;
+  const wml = 700 - rml - gml - bml;
+
+  document.getElementById('preview').style.background = toRgb(c.r, c.g, c.b);
+  document.getElementById('preview').innerHTML = '';
+  document.getElementById('sel-name').textContent = c.name;
+  document.getElementById('ml-w').textContent = wml + ' ml';
+  document.getElementById('ml-r').textContent = rml + ' ml';
+  document.getElementById('ml-g').textContent = gml + ' ml';
+  document.getElementById('ml-b').textContent = bml + ' ml';
+  document.getElementById('send-btn').disabled = !firebaseOk;
+}
+
+// ── Log ───────────────────────────────────────────────────────
+function log(msg, type = '') {
+  const box = document.getElementById('log');
+  const span = document.createElement('span');
+  span.className = 'log-entry ' + type;
+  const now = new Date().toLocaleTimeString('es-CO', {hour:'2-digit', minute:'2-digit', second:'2-digit'});
+  span.textContent = `[${now}] ${msg}`;
+  box.innerHTML = '';
+  box.appendChild(span);
+  // keep last 8 entries
+  if (box.children.length > 8) box.removeChild(box.firstChild);
+  box.scrollTop = box.scrollHeight;
+}
+
+// ── Firebase ──────────────────────────────────────────────────
+function setStatus(ok, msg) {
+  const dot = document.getElementById('dot');
+  const txt = document.getElementById('status-text');
+  dot.className = 'dot ' + (ok ? 'ok' : ok === null ? 'pulse' : 'err');
+  txt.textContent = msg;
+  firebaseOk = !!ok;
+  const btn = document.getElementById('send-btn');
+  if (selectedIdx !== null) btn.disabled = !firebaseOk;
+}
+
+window.initFirebase = function(cfg) {
+  try {
+    const app = initializeApp(cfg);
+    db = getDatabase(app);
+    setStatus(true, 'Firebase conectado — ESP32 en escucha');
+    log('Conexión Firebase establecida.', 'ok');
+
+    // Escuchar el estado de la ESP32
+    onValue(ref(db, 'mezclador/estado'), snap => {
+      const estado = snap.val();
+      if (!estado) return;
+      const msgs = {
+        idle:      { t: 'ESP32 lista para recibir órdenes.', cls: 'ok' },
+        recibido:  { t: 'ESP32 recibió la orden.', cls: 'info' },
+        mezclando: { t: 'Mezclando...', cls: 'info' },
+        listo:     { t: '¡Mezcla completada!', cls: 'ok' },
+        error:     { t: 'Error en ESP32.', cls: 'err' },
+      };
+      const m = msgs[estado] || { t: 'Estado: ' + estado, cls: '' };
+      log(m.t, m.cls);
+    });
+  } catch(e) {
+    setStatus(false, 'Error al conectar Firebase');
+    log('Error: ' + e.message, 'err');
+  }
+};
+
+window.enviarOrden = async function() {
+  if (selectedIdx === null || !db) return;
+  const c = COLORES[selectedIdx];
+  const rml = c.r * U, gml = c.g * U, bml = c.b * U;
+  const wml = 700 - rml - gml - bml;
+
+  const orden = {
+    color: c.name,
+    ml_blanca: wml,
+    ml_roja:   rml,
+    ml_verde:  gml,
+    ml_azul:   bml,
+    timestamp: Date.now(),
+    estado: 'pendiente'
+  };
+
+  try {
+    await set(ref(db, 'mezclador/orden'), orden);
+    await set(ref(db, 'mezclador/estado'), 'recibido');
+    log(`Orden enviada: ${c.name}`, 'info');
+  } catch(e) {
+    log('Error al enviar: ' + e.message, 'err');
+  }
+};
+
+// ── Config modal ──────────────────────────────────────────────
+window.openModal = function() {
+  const saved = JSON.parse(localStorage.getItem('fb_cfg') || '{}');
+  document.getElementById('cfg-apiKey').value    = saved.apiKey    || '';
+  document.getElementById('cfg-dbUrl').value     = saved.databaseURL || '';
+  document.getElementById('cfg-projectId').value = saved.projectId || '';
+  document.getElementById('modal').classList.add('open');
+};
+window.closeModal = function() {
+  document.getElementById('modal').classList.remove('open');
+};
+window.saveConfig = function() {
+  const cfg = {
+    apiKey:      document.getElementById('cfg-apiKey').value.trim(),
+    databaseURL: document.getElementById('cfg-dbUrl').value.trim(),
+    projectId:   document.getElementById('cfg-projectId').value.trim(),
+    authDomain:  document.getElementById('cfg-projectId').value.trim() + '.firebaseapp.com',
+    storageBucket: document.getElementById('cfg-projectId').value.trim() + '.appspot.com',
+  };
+  if (!cfg.apiKey || !cfg.databaseURL) {
+    alert('API Key y Database URL son obligatorios.');
+    return;
+  }
+  localStorage.setItem('fb_cfg', JSON.stringify(cfg));
+  closeModal();
+  window.initFirebase(cfg);
+};
+
+// ── Auto-init si hay config guardada ──────────────────────────
+const saved = JSON.parse(localStorage.getItem('fb_cfg') || '{}');
+if (saved.apiKey && saved.databaseURL) {
+  window.initFirebase(saved);
+} else {
+  setStatus(null, 'Configura Firebase para continuar →');
+  setTimeout(openModal, 600);
+}
+
+renderGrid();
+</script>
+</body>
+</html>

@@ -1,0 +1,218 @@
+// ----- BOMBAS -----
+
+// Blanca
+const int BW1 = 23;
+const int BW2 = 22;
+
+// Verde
+const int BV1 = 21;
+const int BV2 = 19;
+
+// Azul
+const int BA1 = 18;
+const int BA2 = 5;
+
+// Roja
+const int BR1 = 17;
+const int BR2 = 16;
+
+// Mezclador
+const int M1 = 26;
+const int M2 = 27;
+
+// PWM mezclador
+const int ENM = 15;
+
+
+// ----- ESTADOS -----
+
+bool blanca = false;
+bool verde = false;
+bool azul = false;
+bool roja = false;
+bool mezclador = false;
+
+
+void setup() {
+
+  Serial.begin(115200);
+
+  // Bombas
+  pinMode(BW1, OUTPUT);
+  pinMode(BW2, OUTPUT);
+
+  pinMode(BV1, OUTPUT);
+  pinMode(BV2, OUTPUT);
+
+  pinMode(BA1, OUTPUT);
+  pinMode(BA2, OUTPUT);
+
+  pinMode(BR1, OUTPUT);
+  pinMode(BR2, OUTPUT);
+
+  // Mezclador
+  pinMode(M1, OUTPUT);
+  pinMode(M2, OUTPUT);
+
+  // PWM ESP32
+  ledcAttach(ENM, 1000, 8);
+
+  apagarTodo();
+
+  Serial.println("===== SISTEMA LISTO =====");
+  Serial.println("B = Blanco");
+  Serial.println("V = Verde");
+  Serial.println("A = Azul");
+  Serial.println("R = Rojo");
+  Serial.println("M = Mezclador");
+}
+
+
+void loop() {
+
+  if (Serial.available()) {
+
+    char tecla = toupper(Serial.read());
+
+    switch(tecla) {
+
+      // ----- BOMBA BLANCA -----
+      case 'B':
+
+        blanca = !blanca;
+
+        controlMotor(BW1, BW2, blanca);
+
+        Serial.println(blanca ? "Blanco ON" : "Blanco OFF");
+
+      break;
+
+
+      // ----- BOMBA VERDE -----
+      case 'V':
+
+        verde = !verde;
+
+        controlMotor(BV1, BV2, verde);
+
+        Serial.println(verde ? "Verde ON" : "Verde OFF");
+
+      break;
+
+
+      // ----- BOMBA AZUL -----
+      case 'A':
+
+        azul = !azul;
+
+        controlMotor(BA1, BA2, azul);
+
+        Serial.println(azul ? "Azul ON" : "Azul OFF");
+
+      break;
+
+
+      // ----- BOMBA ROJA -----
+      case 'R':
+
+        roja = !roja;
+
+        controlMotor(BR1, BR2, roja);
+
+        Serial.println(roja ? "Rojo ON" : "Rojo OFF");
+
+      break;
+
+
+      // ----- MEZCLADOR -----
+      case 'M':
+
+        mezclador = !mezclador;
+
+        controlMezclador(mezclador);
+
+        Serial.println(mezclador ? "Mezclador ON" : "Mezclador OFF");
+
+      break;
+    }
+  }
+}
+
+
+
+// =======================================
+// FUNCION NORMAL MOTORES / BOMBAS
+// =======================================
+
+void controlMotor(int pin1, int pin2, bool estado){
+
+  if(estado){
+
+    digitalWrite(pin1, HIGH);
+    digitalWrite(pin2, LOW);
+
+  }
+  else{
+
+    digitalWrite(pin1, LOW);
+    digitalWrite(pin2, LOW);
+
+  }
+}
+
+
+
+// =======================================
+// FUNCION MEZCLADOR CON PWM
+// =======================================
+
+void controlMezclador(bool estado){
+
+  if(estado){
+
+    digitalWrite(M1, HIGH);
+    digitalWrite(M2, LOW);
+
+    // Velocidad del mezclador
+    // 255 = maximo
+    // 128 = mitad
+    // 80 = lento
+
+    ledcWrite(ENM, 100);
+
+  }
+  else{
+
+    digitalWrite(M1, LOW);
+    digitalWrite(M2, LOW);
+
+    ledcWrite(ENM, 0);
+
+  }
+}
+
+
+
+// =======================================
+// APAGAR TODO
+// =======================================
+
+void apagarTodo(){
+
+  digitalWrite(BW1, LOW);
+  digitalWrite(BW2, LOW);
+
+  digitalWrite(BV1, LOW);
+  digitalWrite(BV2, LOW);
+
+  digitalWrite(BA1, LOW);
+  digitalWrite(BA2, LOW);
+
+  digitalWrite(BR1, LOW);
+  digitalWrite(BR2, LOW);
+
+  digitalWrite(M1, LOW);
+  digitalWrite(M2, LOW);
+
+  ledcWrite(ENM, 0);
+}

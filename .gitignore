@@ -1,0 +1,25 @@
+# secrets
+.env
+
+# dependencies
+node_modules/
+
+# build output
+web/dist/
+web/.angular/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+api/__pycache__/
+api/_importcheck.py
+api/_dbcheck.py
+
+# runtime / local data
+ruvector.db
+
+# tooling state
+.claude-flow/
+.claude/
+.swarm/
