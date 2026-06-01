@@ -60,6 +60,8 @@ class MqttBroker:
         self._subs: dict[str, set] = defaultdict(set)
         # called with (topic: str, payload: bytes) on every inbound PUBLISH
         self.on_message = None
+        # called with (username: str, password: str) -> bool on CONNECT; None = allow all
+        self.auth_callback = None
 
     # ── Internal publish (to all subscribers) ─────────────────────────────────
 
@@ -100,8 +102,31 @@ class MqttBroker:
                 body  = await reader.readexactly(rem) if rem else b""
 
                 if ptype == CONNECT:
-                    writer.write(bytes([0x20, 0x02, 0x00, 0x00]))   # CONNACK, accepted
+                    # Parse connect flags + credentials
+                    # Variable header: proto_name(6)+proto_level(1)+flags(1)+keepalive(2)=10
+                    connect_flags = body[9]
+                    has_user = bool(connect_flags & 0x80)
+                    has_pass = bool(connect_flags & 0x40)
+                    has_will = bool(connect_flags & 0x04)
+                    pos = 10
+                    cid_len = struct.unpack_from("!H", body, pos)[0]; pos += 2 + cid_len
+                    if has_will:
+                        wt = struct.unpack_from("!H", body, pos)[0]; pos += 2 + wt
+                        wm = struct.unpack_from("!H", body, pos)[0]; pos += 2 + wm
+                    username = password = None
+                    if has_user and pos < len(body):
+                        l = struct.unpack_from("!H", body, pos)[0]; pos += 2
+                        username = body[pos:pos+l].decode(); pos += l
+                    if has_pass and pos < len(body):
+                        l = struct.unpack_from("!H", body, pos)[0]; pos += 2
+                        password = body[pos:pos+l].decode(errors="replace"); pos += l
+                    rc = 0x00
+                    if self.auth_callback and not self.auth_callback(username or "", password or ""):
+                        rc = 0x04  # bad credentials
+                    writer.write(bytes([0x20, 0x02, 0x00, rc]))
                     await writer.drain()
+                    if rc != 0:
+                        return
 
                 elif ptype == PUBLISH:
                     topic, pos = _read_str(body, 0)

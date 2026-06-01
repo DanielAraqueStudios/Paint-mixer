@@ -70,4 +70,12 @@ export class ApiService {
   getProfile(): Observable<ProfileData> {
     return this.http.get<ProfileData>('/api/profile')
   }
+
+  getDeviceToken(): Observable<{token: string; email: string}> {
+    return this.http.get<{token: string; email: string}>('/api/auth/device-token')
+  }
+
+  regenerateDeviceToken(): Observable<{token: string; email: string}> {
+    return this.http.post<{token: string; email: string}>('/api/auth/device-token/regenerate', {})
+  }
 }

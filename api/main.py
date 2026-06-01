@@ -1,16 +1,16 @@
+from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException, Depends
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from sqlalchemy import text
-from urllib.parse import urlparse
-import paho.mqtt.client as mqtt_lib
-import json, os, threading
+import json, os
 from pathlib import Path
 
 from models import engine, Base, Command, SavedColor
-from auth import router as auth_router, current_user
+from auth import router as auth_router, current_user, check_device_token
+from broker import MqttBroker
 
 
 # ── DB init ───────────────────────────────────────────────────────────────────
@@ -18,32 +18,30 @@ from auth import router as auth_router, current_user
 def init_db():
     Base.metadata.create_all(engine)
     with engine.connect() as conn:
-        try:
-            conn.execute(text('ALTER TABLE "Command" ADD COLUMN "userId" INTEGER REFERENCES "User"(id)'))
-            conn.commit()
-        except Exception:
-            conn.rollback()
+        for stmt in [
+            'ALTER TABLE "Command" ADD COLUMN "userId" INTEGER REFERENCES "User"(id)',
+            'ALTER TABLE "User" ADD COLUMN "deviceToken" VARCHAR',
+        ]:
+            try:
+                conn.execute(text(stmt))
+                conn.commit()
+            except Exception:
+                conn.rollback()
 
 init_db()
 
 
-# ── MQTT ──────────────────────────────────────────────────────────────────────
+# ── Embedded MQTT broker ──────────────────────────────────────────────────────
 
-MQTT_URL = os.environ.get("MQTT_URL", "mqtt://localhost:1883")
+_broker = MqttBroker()
+_broker.auth_callback = check_device_token
 
-def _parse_url(url: str):
-    p = urlparse(url)
-    return p.hostname or "localhost", p.port or 1883, p.username, p.password
-
-_mqtt = mqtt_lib.Client(client_id="paintmixer-api", clean_session=True)
-_host, _port, _user, _pw = _parse_url(MQTT_URL)
-if _user:
-    _mqtt.username_pw_set(_user, _pw)
+MQTT_PORT = int(os.environ.get("MQTT_PORT", 1883))
 
 
-def _on_message(client, userdata, msg):
+async def _on_mqtt_message(topic: str, payload: bytes):
     try:
-        data   = json.loads(msg.payload)
+        data   = json.loads(payload)
         cmd_id = data["id"]
         status = data["status"]
         with Session(engine) as s:
@@ -51,45 +49,36 @@ def _on_message(client, userdata, msg):
             if cmd:
                 cmd.status = status
                 s.commit()
-        print(f"[MQTT] Command {cmd_id} → {status}")
+        print(f"[MQTT] Command {cmd_id} -> {status}")
     except Exception as e:
         print(f"[MQTT] message error: {e}")
 
-
-_mqtt.on_message = _on_message
-
-
-def _mqtt_connect():
-    try:
-        _mqtt.connect(_host, _port, 60)
-        _mqtt.subscribe("mixer/status")
-        _mqtt.loop_start()
-        print(f"[MQTT] Connected {_host}:{_port}")
-    except Exception as e:
-        print(f"[MQTT] connect failed: {e}")
+_broker.on_message = _on_mqtt_message
 
 
-threading.Thread(target=_mqtt_connect, daemon=True).start()
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    server = await _broker.start(port=MQTT_PORT)
+    yield
+    server.close()
 
 
 # ── App ───────────────────────────────────────────────────────────────────────
 
-app = FastAPI()
+app = FastAPI(lifespan=lifespan)
 app.include_router(auth_router)
 
 
 @app.get("/api/health")
 def health():
-    result = {"db": False, "mqtt": False, "db_error": None, "mqtt_error": None}
+    result = {"db": False, "mqtt": True, "db_error": None, "mqtt_error": None,
+              "mqtt_port": MQTT_PORT}
     try:
         with Session(engine) as s:
             s.execute(text("SELECT 1"))
         result["db"] = True
     except Exception as e:
         result["db_error"] = str(e)
-    result["mqtt"] = _mqtt.is_connected()
-    if not result["mqtt"]:
-        result["mqtt_error"] = "Cliente MQTT desconectado"
     return result
 
 
@@ -117,17 +106,14 @@ def _row(cmd: Command) -> dict:
 
 
 @app.post("/api/command", status_code=201)
-def create_command(body: CommandIn, user=Depends(current_user)):
+async def create_command(body: CommandIn, user=Depends(current_user)):
     with Session(engine) as s:
         cmd = Command(**body.model_dump(), userId=user["id"])
         s.add(cmd)
         s.commit()
         s.refresh(cmd)
         row = _row(cmd)
-    try:
-        _mqtt.publish("mixer/command", json.dumps(row))
-    except Exception as e:
-        print(f"[MQTT] publish error: {e}")
+    await _broker.publish("mixer/command", json.dumps(row))
     return row
 
 

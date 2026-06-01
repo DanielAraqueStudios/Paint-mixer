@@ -21,6 +21,7 @@ class User(Base):
     id           = Column(Integer, primary_key=True, autoincrement=True)
     email        = Column(String,  unique=True, nullable=False)
     passwordHash = Column(String,  nullable=False)
+    deviceToken  = Column(String,  nullable=True)
     createdAt    = Column(DateTime, default=func.now())
     commands     = relationship("Command",    back_populates="user")
     savedColors  = relationship("SavedColor", back_populates="user")

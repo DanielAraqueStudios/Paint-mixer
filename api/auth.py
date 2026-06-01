@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from jose import JWTError, jwt
 import bcrypt as _bcrypt
+import secrets
 from datetime import datetime, timedelta
 import os
 from models import engine, User
@@ -51,7 +52,8 @@ def register(body: AuthIn):
     with Session(engine) as s:
         if s.query(User).filter_by(email=body.email).first():
             raise HTTPException(status_code=409, detail="Email ya registrado")
-        user = User(email=body.email, passwordHash=_hash(body.password))
+        user = User(email=body.email, passwordHash=_hash(body.password),
+                    deviceToken=secrets.token_hex(16))
         s.add(user)
         s.commit()
         s.refresh(user)
@@ -70,3 +72,29 @@ def login(body: AuthIn):
 @router.get("/me")
 def me(user=Depends(current_user)):
     return user
+
+
+@router.get("/device-token")
+def get_device_token(user=Depends(current_user)):
+    with Session(engine) as s:
+        u = s.get(User, user["id"])
+        if not u.deviceToken:
+            u.deviceToken = secrets.token_hex(16)
+            s.commit()
+        return {"token": u.deviceToken, "email": u.email}
+
+
+@router.post("/device-token/regenerate")
+def regenerate_device_token(user=Depends(current_user)):
+    with Session(engine) as s:
+        u = s.get(User, user["id"])
+        u.deviceToken = secrets.token_hex(16)
+        s.commit()
+        return {"token": u.deviceToken, "email": u.email}
+
+
+def check_device_token(email: str, token: str) -> bool:
+    """Used by MQTT broker to validate ESP32 credentials."""
+    with Session(engine) as s:
+        u = s.query(User).filter_by(email=email).first()
+        return u is not None and u.deviceToken == token

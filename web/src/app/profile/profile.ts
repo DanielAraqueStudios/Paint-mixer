@@ -50,6 +50,32 @@ import { AuthService } from '../auth/auth.service'
             </section>
           }
 
+          <!-- Device token -->
+          <section class="section">
+            <h2 class="section-title">Token de dispositivo (ESP32)</h2>
+            @if (deviceToken()) {
+              <div class="token-card">
+                <div class="token-info">
+                  <span class="token-label">Usuario MQTT</span>
+                  <code class="token-value">{{ data()!.email }}</code>
+                </div>
+                <div class="token-info">
+                  <span class="token-label">Contrasena MQTT</span>
+                  <code class="token-value">{{ deviceToken() }}</code>
+                </div>
+                <div class="token-actions">
+                  <button class="copy-btn" (click)="copyToken()">Copiar token</button>
+                  <button class="regen-btn" (click)="regenToken()">Regenerar</button>
+                </div>
+                <p class="token-hint">Usa estos valores en el firmware del ESP32:<br>
+                  <code>mqtt.setCredentials("{{ data()!.email }}", "{{ deviceToken() }}");</code>
+                </p>
+              </div>
+            } @else {
+              <button class="copy-btn" (click)="loadToken()">Mostrar token</button>
+            }
+          </section>
+
           <!-- Mix history -->
           @if (data()!.history.length > 0) {
             <section class="section">
@@ -127,15 +153,28 @@ import { AuthService } from '../auth/auth.service'
     .status[data-s="error"]   { background: #450a0a; color: #f87171; }
     .status[data-s="mixing"]  { background: #1e3a5f; color: #60a5fa; }
     .status[data-s="pending"] { background: #422006; color: #fbbf24; }
+
+    .token-card { background: #18181b; border: 1px solid #27272a; border-radius: 10px; padding: 16px 20px; display: flex; flex-direction: column; gap: 12px; max-width: 600px; }
+    .token-info { display: flex; flex-direction: column; gap: 3px; }
+    .token-label { font-size: 10px; text-transform: uppercase; letter-spacing: .08em; color: #52525b; }
+    .token-value { font-family: monospace; font-size: 13px; color: #fbbf24; background: #09090b; padding: 4px 8px; border-radius: 4px; word-break: break-all; }
+    .token-actions { display: flex; gap: 8px; }
+    .copy-btn { padding: 6px 14px; border-radius: 6px; border: 1px solid #3f3f46; background: #27272a; color: #e4e4e7; font-size: 12px; cursor: pointer; }
+    .copy-btn:hover { background: #3f3f46; }
+    .regen-btn { padding: 6px 14px; border-radius: 6px; border: 1px solid #7f1d1d; background: transparent; color: #f87171; font-size: 12px; cursor: pointer; }
+    .regen-btn:hover { background: #7f1d1d22; }
+    .token-hint { font-size: 11px; color: #52525b; margin: 0; line-height: 1.6; }
+    .token-hint code { color: #a1a1aa; font-size: 11px; }
   `]
 })
 export class Profile implements OnInit {
   private api  = inject(ApiService)
   private auth = inject(AuthService)
 
-  loading = signal(true)
-  data    = signal<ProfileData | null>(null)
-  colors  = signal<SavedColor[]>([])
+  loading     = signal(true)
+  data        = signal<ProfileData | null>(null)
+  colors      = signal<SavedColor[]>([])
+  deviceToken = signal<string | null>(null)
 
   ngOnInit() {
     this.api.getProfile().subscribe({
@@ -149,5 +188,18 @@ export class Profile implements OnInit {
     this.api.deleteColor(id).subscribe(() =>
       this.colors.update(cs => cs.filter(c => c.id !== id))
     )
+  }
+
+  loadToken() {
+    this.api.getDeviceToken().subscribe(r => this.deviceToken.set(r.token))
+  }
+
+  copyToken() {
+    const t = this.deviceToken()
+    if (t) navigator.clipboard.writeText(t)
+  }
+
+  regenToken() {
+    this.api.regenerateDeviceToken().subscribe(r => this.deviceToken.set(r.token))
   }
 }
