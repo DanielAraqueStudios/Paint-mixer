@@ -9,7 +9,7 @@ import { AuthService } from '../auth/auth.service'
   template: `
     <div class="page">
       <div class="card">
-        <h1 class="brand">Pinturas <span class="accent">124345</span></h1>
+        <h1 class="brand">Pintu<span class="accent">col</span></h1>
         <p class="tagline">Sistema de mezclado IoT</p>
 
         <div class="tabs">
@@ -40,21 +40,23 @@ import { AuthService } from '../auth/auth.service'
   `,
   styles: [`
     .page {
-      min-height: 100vh; background: #09090b;
+      height: 100dvh; background: #09090b;
       display: flex; align-items: center; justify-content: center;
+      padding: 16px; box-sizing: border-box;
     }
     .card {
-      width: 360px; background: #18181b;
+      width: 100%; max-width: 380px; background: #18181b;
       border: 1px solid #27272a; border-radius: 16px;
-      padding: 40px 36px;
+      padding: 36px 32px; box-sizing: border-box;
     }
     .brand { font-size: 24px; margin: 0 0 4px; color: #f4f4f5; }
     .accent { color: #fbbf24; font-style: italic; }
     .tagline { font-size: 11px; color: #52525b; text-transform: uppercase; letter-spacing: .12em; margin: 0 0 28px; }
     .tabs { display: flex; gap: 4px; margin-bottom: 24px; }
     .tabs button {
-      flex: 1; padding: 8px; border-radius: 8px; border: 1px solid #27272a;
+      flex: 1; padding: 9px 4px; border-radius: 8px; border: 1px solid #27272a;
       background: transparent; color: #71717a; cursor: pointer; font-size: 13px;
+      white-space: nowrap; min-width: 0;
     }
     .tabs button.active { background: #27272a; color: #f4f4f5; }
     form { display: flex; flex-direction: column; gap: 16px; }
@@ -63,16 +65,23 @@ import { AuthService } from '../auth/auth.service'
       padding: 10px 12px; border-radius: 8px;
       border: 1px solid #27272a; background: #09090b;
       color: #f4f4f5; font-size: 14px; outline: none;
+      width: 100%; box-sizing: border-box;
     }
     input:focus { border-color: #52525b; }
     .error-msg { background: #450a0a; border: 1px solid #7f1d1d; color: #fca5a5; padding: 10px 12px; border-radius: 8px; font-size: 13px; }
     .submit-btn {
-      padding: 12px; border-radius: 10px; border: none;
+      padding: 13px; border-radius: 10px; border: none;
       background: #fbbf24; color: #18181b; font-size: 14px;
       font-weight: 600; cursor: pointer; margin-top: 4px;
+      width: 100%; box-sizing: border-box;
     }
     .submit-btn:hover:not(:disabled) { background: #fcd34d; }
     .submit-btn:disabled { background: #27272a; color: #52525b; cursor: not-allowed; }
+
+    @media (max-width: 400px) {
+      .card { padding: 28px 20px; border-radius: 12px; }
+      .brand { font-size: 20px; }
+    }
   `]
 })
 export class Login {

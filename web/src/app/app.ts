@@ -12,7 +12,7 @@ import { AuthService } from './auth/auth.service'
     <div class="layout">
 
       <nav class="nav">
-        <span class="brand">Pinturas <span class="accent">124345</span></span>
+        <span class="brand">Pintu<span class="accent">col</span></span>
         <div class="nav-links">
           <a routerLink="/"        routerLinkActive="active" [routerLinkActiveOptions]="{exact:true}">Catálogo</a>
           <a routerLink="/scan"    routerLinkActive="active">Scanner</a>
