@@ -83,6 +83,20 @@ const ROWS = [
     }
     .send-btn:hover:not(:disabled) { background: #fcd34d; }
     .send-btn:disabled { background: #27272a; color: #52525b; cursor: not-allowed; }
+
+    @media (max-width: 768px) {
+      .sidebar { height: auto; border-left: none; padding: 20px 16px; }
+      .preview { height: 80px; }
+      .rows { flex-direction: row; flex-wrap: wrap; gap: 0 16px; }
+      .row { flex: 1 1 45%; padding: 8px 0; }
+      .send-btn { margin-top: 4px; }
+    }
+
+    @media (max-width: 640px) {
+      .sidebar { padding: 16px 12px; }
+      .rows { flex-direction: column; }
+      .row { flex: unset; }
+    }
   `]
 })
 export class MixSidebar {

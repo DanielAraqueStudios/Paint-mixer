@@ -27,6 +27,16 @@ import { ApiService } from '../api.service'
     .catalog { flex: 1; padding: 32px 40px; overflow-y: auto; }
     .section-title { font-size: 14px; color: #71717a; margin: 0 0 16px; }
     .sidebar-wrap { width: 300px; flex-shrink: 0; }
+
+    @media (max-width: 768px) {
+      .body { flex-direction: column; overflow-y: auto; }
+      .catalog { padding: 20px 16px; overflow-y: unset; }
+      .sidebar-wrap { width: 100%; flex-shrink: 0; border-top: 1px solid #27272a; }
+    }
+
+    @media (max-width: 640px) {
+      .catalog { padding: 16px 12px; }
+    }
   `]
 })
 export class Home {

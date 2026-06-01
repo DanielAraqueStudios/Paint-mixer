@@ -37,6 +37,19 @@ import { Color, COLORS, toRgb, getMl } from '../colors'
     .info { padding: 8px; background: #18181b; }
     .name { font-size: 12px; color: #f4f4f5; line-height: 1.3; }
     .ml { font-size: 10px; color: #71717a; font-family: monospace; margin-top: 2px; }
+
+    @media (max-width: 640px) {
+      .grid { grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); gap: 8px; }
+      .swatch { height: 52px; }
+      .info { padding: 6px; }
+    }
+
+    @media (max-width: 400px) {
+      .grid { grid-template-columns: repeat(auto-fill, minmax(80px, 1fr)); gap: 6px; }
+      .swatch { height: 44px; }
+      .name { font-size: 11px; }
+      .ml { display: none; }
+    }
   `]
 })
 export class ColorGrid {
