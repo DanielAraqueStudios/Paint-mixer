@@ -103,8 +103,9 @@ class MqttBroker:
 
                 if ptype == CONNECT:
                     # Parse connect flags + credentials
-                    # Variable header: proto_name(6)+proto_level(1)+flags(1)+keepalive(2)=10
-                    connect_flags = body[9]
+                    # Variable header: proto_name(6 bytes)+proto_level(1)+connect_flags(1)+keepalive(2)=10
+                    # body[0:2]=name_len, body[2:6]="MQTT", body[6]=level, body[7]=flags, body[8:10]=keepalive
+                    connect_flags = body[7]
                     has_user = bool(connect_flags & 0x80)
                     has_pass = bool(connect_flags & 0x40)
                     has_will = bool(connect_flags & 0x04)
