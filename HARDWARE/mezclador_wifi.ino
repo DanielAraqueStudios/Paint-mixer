@@ -20,18 +20,19 @@
 #define MQTT_CLIENT  "esp32-mezclador"
 
 // ── Pines L298N #1 ──────────────────────────────────────────
-#define BLANCA_IN1  13
-#define BLANCA_IN2  12
-#define ROJA_IN1    14
-#define ROJA_IN2    27
+#define BLANCA_IN1  23
+#define BLANCA_IN2  22
+#define ROJA_IN1    17
+#define ROJA_IN2    16
 
 // ── Pines L298N #2 ──────────────────────────────────────────
-#define VERDE_IN1   26
-#define VERDE_IN2   25
-#define AZUL_IN1    33
-#define AZUL_IN2    32
-#define MIX_IN1     18
-#define MIX_IN2     19
+#define VERDE_IN1   21
+#define VERDE_IN2   19
+#define AZUL_IN1    18
+#define AZUL_IN2    5
+#define MIX_IN1     26
+#define MIX_IN2     27
+#define ENM         15  // PWM mezclador
 
 // ── Caudales calibrados (ml/s) ───────────────────────────────
 float caudal_blanca = 3.16;
@@ -151,8 +152,10 @@ unsigned long tiempoMs(float ml, float caudal) {
   return (unsigned long)((ml / caudal) * 1000.0);
 }
 
-void bombaON(int in1, int in2)  { digitalWrite(in1, HIGH); digitalWrite(in2, LOW); }
-void bombaOFF(int in1, int in2) { digitalWrite(in1, LOW);  digitalWrite(in2, LOW); }
+void bombaON(int in1, int in2)      { digitalWrite(in1, HIGH); digitalWrite(in2, LOW); }
+void bombaOFF(int in1, int in2)     { digitalWrite(in1, LOW);  digitalWrite(in2, LOW); }
+void mezcladorON(int in1, int in2)  { digitalWrite(in1, HIGH); digitalWrite(in2, LOW); ledcWrite(ENM, 100); }
+void mezcladorOFF(int in1, int in2) { digitalWrite(in1, LOW);  digitalWrite(in2, LOW); ledcWrite(ENM, 0); }
 
 void publicarEstado(const char* status) {
   if (currentCommandId < 0) return;
@@ -179,10 +182,11 @@ void iniciarMezcla(float ml_blanca, float ml_roja, float ml_verde, float ml_azul
 
   stepIdx   = 0;
   stepStart = millis();
-  phase     = PHASE_PUMP_ON;
+  phase     = (stepCount == 1) ? PHASE_MIX_ON : PHASE_PUMP_ON;
 
   Serial.printf("  → %s: %lu ms\n", steps[0].nombre, steps[0].onMs);
-  bombaON(steps[0].in1, steps[0].in2);
+  if (stepCount == 1) mezcladorON(steps[0].in1, steps[0].in2);
+  else                bombaON(steps[0].in1, steps[0].in2);
   publicarEstado("mixing");
 }
 
@@ -210,15 +214,20 @@ void tickMezcla() {
         if (stepIdx >= stepCount) { phase = PHASE_IDLE; return; }
         Step& next = steps[stepIdx];
         Serial.printf("  → %s: %lu ms\n", next.nombre, next.onMs);
-        bombaON(next.in1, next.in2);
         stepStart = now;
-        phase = (stepIdx == stepCount - 1) ? PHASE_MIX_ON : PHASE_PUMP_ON;
+        if (stepIdx == stepCount - 1) {
+          mezcladorON(next.in1, next.in2);
+          phase = PHASE_MIX_ON;
+        } else {
+          bombaON(next.in1, next.in2);
+          phase = PHASE_PUMP_ON;
+        }
       }
       break;
 
     case PHASE_MIX_ON:
       if (elapsed >= s.onMs) {
-        bombaOFF(s.in1, s.in2);
+        mezcladorOFF(s.in1, s.in2);
         phase = PHASE_IDLE; busy = false; currentCommandId = -1;
         Serial.println("  ✓ Completado.\n==============================\n");
         publicarEstado("done");
@@ -292,6 +301,8 @@ void setup() {
     MIX_IN1,    MIX_IN2
   };
   for (int p : pines) { pinMode(p, OUTPUT); digitalWrite(p, LOW); }
+  ledcAttach(ENM, 1000, 8);
+  ledcWrite(ENM, 0);
 
   // Check for config mode: send any char within 3 s, or no config stored
   Serial.println("\nEscribe 'config' en 3 s para reconfigurar...");
