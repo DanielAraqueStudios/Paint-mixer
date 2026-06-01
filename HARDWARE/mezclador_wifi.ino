@@ -14,8 +14,8 @@
 #include <ArduinoJson.h>
 
 // ── Credenciales WiFi (hotspot del PC) ──────────────────────
-#define WIFI_SSID   "NombreDeHotspot"
-#define WIFI_PASS   "ClaveDeHotspot"
+#define WIFI_SSID   "a"
+#define WIFI_PASS   "12345678"
 
 // ── Broker MQTT (IP del PC en el hotspot — usualmente 192.168.137.1) ──
 #define MQTT_SERVER "192.168.137.1"
