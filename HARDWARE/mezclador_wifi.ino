@@ -47,6 +47,13 @@ float caudal_azul   = 3.16;
 int  currentCommandId = -1;
 bool busy             = false;
 
+// ── Estado UART manual ───────────────────────────────────────
+bool uart_blanca    = false;
+bool uart_verde     = false;
+bool uart_azul      = false;
+bool uart_roja      = false;
+bool uart_mezclador = false;
+
 Preferences prefs;
 WiFiClient   wifiClient;
 PubSubClient mqtt(wifiClient);
@@ -334,6 +341,42 @@ void setup() {
 
   conectarMQTT();
   Serial.println("Mezclador listo — esperando órdenes MQTT.");
+  Serial.println("── Test UART (solo si no hay mezcla activa) ──");
+  Serial.println("  B = Blanca  V = Verde  A = Azul  R = Roja  M = Mezclador");
+}
+
+// ── UART manual test (blocked while MQTT mix is running) ─────
+void tickUART() {
+  if (!Serial.available()) return;
+  char tecla = toupper(Serial.read());
+  switch (tecla) {
+    case 'B':
+      uart_blanca = !uart_blanca;
+      bombaON(BLANCA_IN1, BLANCA_IN2); if (!uart_blanca) bombaOFF(BLANCA_IN1, BLANCA_IN2);
+      Serial.println(uart_blanca ? "Blanco ON" : "Blanco OFF");
+      break;
+    case 'V':
+      uart_verde = !uart_verde;
+      bombaON(VERDE_IN1, VERDE_IN2); if (!uart_verde) bombaOFF(VERDE_IN1, VERDE_IN2);
+      Serial.println(uart_verde ? "Verde ON" : "Verde OFF");
+      break;
+    case 'A':
+      uart_azul = !uart_azul;
+      bombaON(AZUL_IN1, AZUL_IN2); if (!uart_azul) bombaOFF(AZUL_IN1, AZUL_IN2);
+      Serial.println(uart_azul ? "Azul ON" : "Azul OFF");
+      break;
+    case 'R':
+      uart_roja = !uart_roja;
+      bombaON(ROJA_IN1, ROJA_IN2); if (!uart_roja) bombaOFF(ROJA_IN1, ROJA_IN2);
+      Serial.println(uart_roja ? "Rojo ON" : "Rojo OFF");
+      break;
+    case 'M':
+      uart_mezclador = !uart_mezclador;
+      if (uart_mezclador) mezcladorON(MIX_IN1, MIX_IN2);
+      else                mezcladorOFF(MIX_IN1, MIX_IN2);
+      Serial.println(uart_mezclador ? "Mezclador ON" : "Mezclador OFF");
+      break;
+  }
 }
 
 // ── Loop ─────────────────────────────────────────────────────
@@ -342,6 +385,7 @@ void loop() {
   if (!busy) {
     if (WiFi.status() != WL_CONNECTED) conectarWiFi();
     if (!mqtt.connected()) conectarMQTT();
+    tickUART();
   }
   mqtt.loop();
 }

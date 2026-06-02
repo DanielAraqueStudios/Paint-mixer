@@ -48,10 +48,10 @@
 //  caudal_X = ml recolectados en 10s / 10  →  ml/s
 //  Si todas las bombas son iguales, pon el mismo valor en todas.
 // ============================================================
-float caudal_blanca = 8.0;  // ml/s  ← reemplaza con tu medición
-float caudal_roja   = 8.0;  // ml/s
-float caudal_verde  = 8.0;  // ml/s
-float caudal_azul   = 8.0;  // ml/s
+float caudal_blanca = 3.16;  // ml/s  ← reemplaza con tu medición
+float caudal_roja   = 3.16;  // ml/s
+float caudal_verde  = 3.16;  // ml/s
+float caudal_azul   = 3.16;  // ml/s
 
 // Tiempo que gira el mezclador después de dispensar (ms)
 #define TIEMPO_MEZCLA  15000   // 15 segundos
